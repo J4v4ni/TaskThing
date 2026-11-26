@@ -2,6 +2,13 @@
 
 All notable changes to Task Thing will be documented in this file.
 
+## [1.0.7] - 2026-11-26
+
+### Fixed
+- **Tag edits on mobile and PC**: pressing an existing tag now opens an **Edit Tag** modal (previously the toolbar tag cycled saved tags and tapping a tag did nothing). Rename propagates to the tag bank and every task/habit; **Delete** removes it everywhere.
+- **Tag bank on mobile and PC**: the **New Tag** button hides once a tag exists and reappears when the bank is empty.
+- **PC widget layout**: the quick-add controls no longer squeeze — priority/time/date/tag sit on one wrapping row, New Tag + Today on the next, and **Save Task** on its own right-aligned row.
+
 ## [1.0.6] - 2026-11-11
 
 ### Fixed
