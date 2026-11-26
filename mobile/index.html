@@ -645,16 +645,19 @@
   <div id="mobile-new-tag-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
     <div class="bg-surface border border-outline rounded-2xl p-5 w-full max-w-sm flex flex-col gap-3.5 shadow-2xl">
       <div class="flex items-center justify-between pb-1 border-b border-outline-variant">
-        <span class="font-headline-sm text-[15px] text-on-surface font-semibold">New Tag</span>
+        <span id="mobile-tag-modal-title" class="font-headline-sm text-[15px] text-on-surface font-semibold">New Tag</span>
         <button id="mobile-btn-close-tag-modal" type="button" class="text-on-surface-variant hover:text-on-surface p-1 rounded-lg">
           <span class="material-symbols-outlined text-[20px]">close</span>
         </button>
       </div>
       <p class="font-body-sm text-[12px] text-on-surface-variant">Add a category tag to organize your tasks and daily habits.</p>
       <input id="mobile-input-new-tag" type="text" placeholder="Tag name (e.g. Finance, Health)..." maxlength="20" class="w-full px-3.5 py-2.5 bg-surface-container-low text-on-surface text-[14px] rounded-xl border border-outline focus:border-primary focus:outline-none transition-all placeholder:text-on-surface-variant/50" />
-      <div class="flex items-center justify-end gap-2 pt-2 border-t border-outline-variant">
-        <button id="mobile-btn-cancel-tag-modal" type="button" class="px-3.5 py-2 rounded-xl text-on-surface-variant hover:text-on-surface text-[13px] font-medium active:scale-95 transition-all">Cancel</button>
-        <button id="mobile-btn-save-new-tag" type="button" class="px-4 py-2 rounded-xl bg-primary text-white font-semibold text-[13px] active:scale-95 transition-all shadow-sm">Save Tag</button>
+      <div class="flex items-center justify-between gap-2 pt-2 border-t border-outline-variant">
+        <button id="mobile-btn-delete-tag" type="button" class="hidden px-3 py-2 rounded-xl text-error hover:bg-error-container/40 text-[13px] font-medium active:scale-95 transition-all">Delete</button>
+        <div class="flex items-center gap-2 ml-auto">
+          <button id="mobile-btn-cancel-tag-modal" type="button" class="px-3.5 py-2 rounded-xl text-on-surface-variant hover:text-on-surface text-[13px] font-medium active:scale-95 transition-all">Cancel</button>
+          <button id="mobile-btn-save-new-tag" type="button" class="px-4 py-2 rounded-xl bg-primary text-white font-semibold text-[13px] active:scale-95 transition-all shadow-sm">Save Tag</button>
+        </div>
       </div>
     </div>
   </div>

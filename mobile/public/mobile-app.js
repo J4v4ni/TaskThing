@@ -43,6 +43,11 @@
   let habitPriority = 'medium';
   let habitTagIndex = 0;
 
+  // Tag edit modal state
+  let tagModalMode = 'add'; // 'add' | 'edit'
+  let editingTagOriginal = null;
+  let tagModalSource = 'task'; // 'task' | 'habit'
+
   const HOTSPOT_CANDIDATES = [
     '172.20.10.1',  // iPhone hotspot gateway
     '172.20.10.2',  // PC on iPhone hotspot
@@ -94,6 +99,8 @@
   const btnSaveNewTag = document.getElementById('mobile-btn-save-new-tag');
   const btnCancelTagModal = document.getElementById('mobile-btn-cancel-tag-modal');
   const btnCloseTagModal = document.getElementById('mobile-btn-close-tag-modal');
+  const tagModalTitle = document.getElementById('mobile-tag-modal-title');
+  const btnDeleteTag = document.getElementById('mobile-btn-delete-tag');
 
   // Mobile Edit Task Modal Elements
   const taskModal = document.getElementById('mobile-task-modal');
@@ -726,6 +733,30 @@
         persistData();
         renderActiveTasks();
       }
+    } else if (type === 'TAG_ADDED' && payload) {
+      if (!mobileData.tagsBank.includes(payload)) {
+        mobileData.tagsBank.push(payload);
+        persistData();
+        updateTagUI();
+      }
+    } else if (type === 'TAG_EDITED' && payload) {
+      const { oldTag, newTag } = payload;
+      const idx = mobileData.tagsBank.indexOf(oldTag);
+      if (idx !== -1 && !mobileData.tagsBank.includes(newTag)) {
+        mobileData.tagsBank[idx] = newTag;
+        applyTagToAll(oldTag, newTag);
+        persistData();
+        updateTagUI();
+        renderActiveTasks();
+        renderRepeatedTasks();
+      }
+    } else if (type === 'TAG_DELETED' && payload?.tag) {
+      mobileData.tagsBank = mobileData.tagsBank.filter(t => t !== payload.tag);
+      applyTagToAll(payload.tag, '');
+      persistData();
+      updateTagUI();
+      renderActiveTasks();
+      renderRepeatedTasks();
     }
   }
 
@@ -918,7 +949,7 @@
                 </span>
               ` : ''}
               ${task.tag ? `
-                <span class="font-label-mono text-[10px] text-on-surface-variant bg-surface-container-high px-1 rounded">
+                <span class="font-label-mono text-[10px] text-on-surface-variant bg-surface-container-high px-1 rounded tag-edit-item" data-tag-value="${escapeHtml(task.tag)}">
                   ${escapeHtml(task.tag)}
                 </span>
               ` : ''}
@@ -945,7 +976,17 @@
       item.querySelector('.delete-btn').addEventListener('click', () => deleteTask(task.id));
       item.querySelector('.edit-btn').addEventListener('click', () => openTaskEditModal(task.id));
       item.querySelector('.task-title-box').addEventListener('click', (e) => {
-        if (!e.target.closest('.move-today-btn')) openTaskEditModal(task.id);
+        if (!e.target.closest('.move-today-btn') && !e.target.closest('.tag-edit-item')) {
+          openTaskEditModal(task.id);
+        }
+      });
+
+      // Tag chip tap → edit tag
+      item.querySelectorAll('.tag-edit-item').forEach(chip => {
+        chip.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openTagEditModal(chip.getAttribute('data-tag-value'));
+        });
       });
 
       const moveBtn = item.querySelector('.move-today-btn');
@@ -1041,7 +1082,7 @@
             <div class="flex items-center gap-2 mt-0.5 font-label-mono text-[10px] text-on-surface-variant">
               <span class="text-primary font-semibold">Repeats Daily</span>
               ${habit.time ? `<span>• ${escapeHtml(habit.time)}</span>` : ''}
-              ${habit.tag ? `<span class="bg-surface-container-high px-1 rounded text-on-surface-variant">${escapeHtml(habit.tag)}</span>` : ''}
+              ${habit.tag ? `<span class="bg-surface-container-high px-1 rounded text-on-surface-variant tag-edit-item" data-tag-value="${escapeHtml(habit.tag)}">${escapeHtml(habit.tag)}</span>` : ''}
             </div>
           </div>
         </div>
@@ -1062,6 +1103,14 @@
       });
 
       card.querySelector('.edit-habit-btn').addEventListener('click', () => openHabitForm(habit.id));
+
+      // Tag chip tap → edit tag
+      card.querySelectorAll('.tag-edit-item').forEach(chip => {
+        chip.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openTagEditModal(chip.getAttribute('data-tag-value'));
+        });
+      });
 
       card.querySelector('.delete-habit-btn').addEventListener('click', () => {
         mobileData.repeatedTasks = mobileData.repeatedTasks.filter(h => h.id !== habit.id);
@@ -1209,15 +1258,141 @@
     }
   }
 
+  function refreshAddTagButton() {
+    if (!btnAddTag) return;
+    const hasTags = (mobileData.tagsBank || []).length > 0;
+    if (hasTags) {
+      btnAddTag.classList.add('hidden');
+      btnAddTag.classList.remove('flex');
+    } else {
+      btnAddTag.classList.remove('hidden');
+      btnAddTag.classList.add('flex');
+    }
+  }
+
   function updateTagUI() {
     const tags = mobileData.tagsBank || [];
     if (tags.length === 0) {
       currentTagIndex = -1;
       tagLabel.textContent = 'No Tag';
+      refreshAddTagButton();
       return;
     }
     if (currentTagIndex < 0 || currentTagIndex >= tags.length) currentTagIndex = 0;
     tagLabel.textContent = tags[currentTagIndex];
+    refreshAddTagButton();
+  }
+
+  // ----------------- TAG MODAL (module scope) -----------------
+  function applyTagToAll(tagOld, tagNew) {
+    ['activeTasks', 'tomorrowTasks', 'repeatedTasks'].forEach(key => {
+      (mobileData[key] || []).forEach(item => {
+        if (item.tag === tagOld) item.tag = tagNew;
+      });
+    });
+  }
+
+  function openTagModal(source = 'task') {
+    tagModalMode = 'add';
+    editingTagOriginal = null;
+    tagModalSource = source;
+    if (!newTagModal) return;
+    if (tagModalTitle) tagModalTitle.textContent = 'New Tag';
+    if (btnDeleteTag) {
+      btnDeleteTag.classList.add('hidden');
+      btnDeleteTag.classList.remove('flex');
+    }
+    if (inputNewTag) {
+      inputNewTag.value = '';
+      setTimeout(() => inputNewTag.focus(), 80);
+    }
+    newTagModal.classList.remove('hidden');
+  }
+
+  function openTagEditModal(tagValue) {
+    tagModalMode = 'edit';
+    editingTagOriginal = tagValue;
+    if (!newTagModal) return;
+    if (tagModalTitle) tagModalTitle.textContent = 'Edit Tag';
+    if (btnDeleteTag) {
+      btnDeleteTag.classList.remove('hidden');
+      btnDeleteTag.classList.add('flex');
+    }
+    if (inputNewTag) {
+      inputNewTag.value = tagValue;
+      setTimeout(() => {
+        inputNewTag.focus();
+        inputNewTag.select();
+      }, 80);
+    }
+    newTagModal.classList.remove('hidden');
+  }
+
+  function closeTagModal() {
+    if (newTagModal) newTagModal.classList.add('hidden');
+    editingTagOriginal = null;
+    tagModalMode = 'add';
+  }
+
+  function saveTagFromInput() {
+    if (!inputNewTag) return;
+    const clean = inputNewTag.value.trim();
+    if (!clean) {
+      closeTagModal();
+      return;
+    }
+
+    if (tagModalMode === 'edit' && editingTagOriginal !== null) {
+      const oldTag = editingTagOriginal;
+      if (clean === oldTag) {
+        closeTagModal();
+        return;
+      }
+      if (mobileData.tagsBank.includes(clean)) {
+        return; // name already taken — keep modal open
+      }
+      const idx = mobileData.tagsBank.indexOf(oldTag);
+      if (idx !== -1) mobileData.tagsBank[idx] = clean;
+      else mobileData.tagsBank.push(clean);
+      applyTagToAll(oldTag, clean);
+      currentTagIndex = mobileData.tagsBank.indexOf(clean);
+      persistData();
+      sendOrQueueMutation({ type: 'TAG_EDITED', payload: { oldTag, newTag: clean } });
+      updateTagUI();
+      renderActiveTasks();
+      renderRepeatedTasks();
+      closeTagModal();
+      return;
+    }
+
+    // Add mode
+    if (!mobileData.tagsBank.includes(clean)) {
+      mobileData.tagsBank.push(clean);
+      persistData();
+      sendOrQueueMutation({ type: 'TAG_ADDED', payload: clean });
+    }
+    if (tagModalSource === 'habit') {
+      habitTagIndex = mobileData.tagsBank.indexOf(clean);
+      if (habitTagLabel) habitTagLabel.textContent = clean;
+    } else {
+      currentTagIndex = mobileData.tagsBank.indexOf(clean);
+    }
+    updateTagUI();
+    closeTagModal();
+  }
+
+  function deleteTagFromModal() {
+    if (editingTagOriginal === null) return;
+    const oldTag = editingTagOriginal;
+    mobileData.tagsBank = (mobileData.tagsBank || []).filter(t => t !== oldTag);
+    applyTagToAll(oldTag, '');
+    if (currentTagIndex >= mobileData.tagsBank.length) currentTagIndex = mobileData.tagsBank.length - 1;
+    persistData();
+    sendOrQueueMutation({ type: 'TAG_DELETED', payload: { tag: oldTag } });
+    updateTagUI();
+    renderActiveTasks();
+    renderRepeatedTasks();
+    closeTagModal();
   }
 
   // Accepts "ip", "ip:port", a query link, or a full pairing link such as
@@ -1603,59 +1778,27 @@
       stylePriorityButton(btnPriority, priorityDot, priorityLabel, currentPriority);
     });
 
-    // Tag button & New Tag
+    // Tag button: open the tag editor (or create a tag when none exist)
     btnTag.addEventListener('click', () => {
-      if (!mobileData.tagsBank || mobileData.tagsBank.length === 0) {
+      const tags = mobileData.tagsBank || [];
+      if (tags.length === 0) {
         openTagModal('task');
         return;
       }
-      currentTagIndex = (currentTagIndex + 1) % mobileData.tagsBank.length;
-      updateTagUI();
+      const tag = tags[currentTagIndex] || tags[0];
+      openTagEditModal(tag);
     });
 
-    // Mobile Tag Modal Controls
-    let tagModalSource = 'task'; // 'task' or 'habit'
-
-    function openTagModal(source = 'task') {
-      tagModalSource = source;
-      if (!newTagModal) return;
-      newTagModal.classList.remove('hidden');
-      if (inputNewTag) {
-        inputNewTag.value = '';
-        setTimeout(() => inputNewTag.focus(), 80);
-      }
-    }
-
-    function closeTagModal() {
-      if (newTagModal) newTagModal.classList.add('hidden');
-    }
-
-    function saveTagFromInput() {
-      if (!inputNewTag) return;
-      const clean = inputNewTag.value.trim();
-      if (clean) {
-        if (!mobileData.tagsBank.includes(clean)) {
-          mobileData.tagsBank.push(clean);
-          persistData();
-          sendWsMessage({ type: 'TAG_ADDED', payload: clean });
-        }
-        
-        if (tagModalSource === 'habit') {
-          habitTagIndex = mobileData.tagsBank.indexOf(clean);
-          if (habitTagLabel) habitTagLabel.textContent = clean;
-        } else {
-          currentTagIndex = mobileData.tagsBank.indexOf(clean);
-          updateTagUI();
-        }
-      }
-      closeTagModal();
-    }
-
+    // Mobile Tag Modal wiring (functions live at module scope)
     btnAddTag?.addEventListener('click', () => openTagModal('task'));
     btnAddHabitTag?.addEventListener('click', () => openTagModal('habit'));
     btnSaveNewTag?.addEventListener('click', saveTagFromInput);
+    btnDeleteTag?.addEventListener('click', deleteTagFromModal);
     btnCancelTagModal?.addEventListener('click', closeTagModal);
     btnCloseTagModal?.addEventListener('click', closeTagModal);
+    newTagModal?.addEventListener('click', (e) => {
+      if (e.target === newTagModal) closeTagModal();
+    });
 
     inputNewTag?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {

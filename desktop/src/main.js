@@ -184,6 +184,43 @@ function handleRemoteMutation(mutation) {
       }
       break;
 
+    case 'TAG_ADDED':
+      if (payload) {
+        data.tagsBank = data.tagsBank || [];
+        if (!data.tagsBank.includes(payload)) {
+          data.tagsBank.push(payload);
+          store.save(data);
+        }
+      }
+      break;
+
+    case 'TAG_EDITED':
+      if (payload?.oldTag && payload?.newTag) {
+        data.tagsBank = data.tagsBank || [];
+        const idx = data.tagsBank.indexOf(payload.oldTag);
+        if (idx !== -1) data.tagsBank[idx] = payload.newTag;
+        else if (!data.tagsBank.includes(payload.newTag)) data.tagsBank.push(payload.newTag);
+        ['activeTasks', 'tomorrowTasks', 'repeatedTasks'].forEach(key => {
+          (data[key] || []).forEach(item => {
+            if (item.tag === payload.oldTag) item.tag = payload.newTag;
+          });
+        });
+        store.save(data);
+      }
+      break;
+
+    case 'TAG_DELETED':
+      if (payload?.tag) {
+        data.tagsBank = (data.tagsBank || []).filter(t => t !== payload.tag);
+        ['activeTasks', 'tomorrowTasks', 'repeatedTasks'].forEach(key => {
+          (data[key] || []).forEach(item => {
+            if (item.tag === payload.tag) item.tag = '';
+          });
+        });
+        store.save(data);
+      }
+      break;
+
     default:
       break;
   }

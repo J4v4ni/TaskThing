@@ -57,6 +57,7 @@
   const btnQuickTag = document.getElementById('btn-quick-tag');
   const quickTagText = document.getElementById('quick-tag-text');
   const btnAddNewTag = document.getElementById('btn-add-new-tag');
+  const tagElements = []; // Will be populated when tags are rendered
   const schedulingTargetBadge = document.getElementById('scheduling-target-badge');
 
   // Tomorrow Prep Banner
@@ -108,6 +109,15 @@
   const btnSaveNewTag = document.getElementById('btn-save-new-tag');
   const btnCancelTagPopover = document.getElementById('btn-cancel-tag-popover');
   const btnCloseTagPopover = document.getElementById('btn-close-tag-popover');
+
+  // Standalone Edit Tag Modal Elements
+  const tagEditModal = document.getElementById('tag-edit-modal');
+  const inputEditTagName = document.getElementById('input-edit-tag-name');
+  const btnSaveEditTag = document.getElementById('btn-save-edit-tag');
+  const btnCancelEditTag = document.getElementById('btn-cancel-edit-tag');
+  const btnCloseEditTag = document.getElementById('btn-close-edit-tag');
+  const btnDeleteEditTag = document.getElementById('btn-delete-edit-tag');
+  let editingTagOriginal = null;
 
   // Habit Inline Form Elements (create + edit)
   const habitAddSection = document.getElementById('habit-add-section');
@@ -223,6 +233,9 @@
       const stockTags = ['Design', 'Dev', 'Ops', 'Team', 'Personal'];
       appData.tagsBank = appData.tagsBank.filter(t => !stockTags.includes(t));
     }
+
+    // Hide "New Tag" button when tags exist - they can be edited by clicking
+    refreshNewTagButton();
     if (!appData.repeatedTasks) appData.repeatedTasks = [];
     if (!appData.tomorrowTasks) appData.tomorrowTasks = [];
     if (!appData.activeTasks) appData.activeTasks = [];
@@ -334,6 +347,7 @@
     if (window.tasksAPI) {
       appData = await window.tasksAPI.loadData();
     }
+    updateTagCyclistUI();
     renderActiveTasks();
     renderCompletedHistory();
     renderRepeatedTasks();
@@ -343,6 +357,9 @@
     else if (mutation.type === 'TASK_COMPLETED') showToast(`Phone completed ${title}`);
     else if (mutation.type === 'TASK_REOPENED') showToast(`Phone reopened ${title}`);
     else if (mutation.type === 'TASK_DELETED') showToast(`Phone removed task`);
+    else if (mutation.type === 'TAG_ADDED') showToast(`Phone added tag "${mutation.payload}"`);
+    else if (mutation.type === 'TAG_EDITED') showToast('Phone renamed a tag');
+    else if (mutation.type === 'TAG_DELETED') showToast('Phone deleted a tag');
   }
 
   // ----------------- NAVIGATION -----------------
@@ -468,7 +485,7 @@
                 </span>
               ` : ''}
               ${task.tag ? `
-                <span class="font-label-mono text-[10px] text-on-surface-variant bg-surface-container-high px-1 rounded">
+                <span class="font-label-mono text-[10px] text-on-surface-variant bg-surface-container-high px-1 rounded cursor-pointer tag-edit-item" data-tag-value="${escapeHtml(task.tag)}">
                   ${escapeHtml(task.tag)}
                 </span>
               ` : ''}
@@ -507,9 +524,17 @@
 
       // Title click to edit
       card.querySelector('.task-title-box').addEventListener('click', (e) => {
-        if (!e.target.closest('.move-today-btn')) {
+        if (!e.target.closest('.move-today-btn') && !e.target.closest('.tag-edit-item')) {
           editTask(task.id);
         }
+      });
+
+      // Tag chip click → edit tag (stop task-title-box from opening)
+      card.querySelectorAll('.tag-edit-item').forEach(chip => {
+        chip.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openTagEditModal(chip.getAttribute('data-tag-value'));
+        });
       });
 
       // Move rollover task to Today
@@ -787,7 +812,7 @@
             <div class="flex items-center gap-2 mt-0.5 font-label-mono text-[10px] text-on-surface-variant">
               <span class="text-primary">Repeats Daily</span>
               ${item.time ? `<span>• ${escapeHtml(item.time)}</span>` : ''}
-              ${item.tag ? `<span class="bg-surface-container-high px-1 rounded text-on-surface-variant">${escapeHtml(item.tag)}</span>` : ''}
+              ${item.tag ? `<span class="bg-surface-container-high px-1 rounded text-on-surface-variant cursor-pointer tag-edit-item" data-tag-value="${escapeHtml(item.tag)}">${escapeHtml(item.tag)}</span>` : ''}
             </div>
           </div>
         </div>
@@ -1000,15 +1025,97 @@
     }
   }
 
+  function refreshNewTagButton() {
+    if (!btnAddNewTag) return;
+    const hasTags = (appData.tagsBank || []).length > 0;
+    if (hasTags) {
+      btnAddNewTag.classList.add('hidden');
+      btnAddNewTag.classList.remove('flex');
+    } else {
+      btnAddNewTag.classList.remove('hidden');
+      btnAddNewTag.classList.add('flex');
+    }
+  }
+
   function updateTagCyclistUI() {
     const tags = appData.tagsBank || [];
     if (tags.length === 0) {
       currentTagIndex = -1;
       quickTagText.textContent = 'No Tag';
+      refreshNewTagButton();
       return;
     }
     if (currentTagIndex < 0 || currentTagIndex >= tags.length) currentTagIndex = 0;
     quickTagText.textContent = tags[currentTagIndex];
+    refreshNewTagButton();
+  }
+
+  // ----------------- TAG EDIT MODAL (module scope) -----------------
+  function openTagEditModal(tagValue) {
+    if (!tagEditModal || !inputEditTagName) return;
+    editingTagOriginal = tagValue;
+    inputEditTagName.value = tagValue;
+    tagEditModal.classList.remove('hidden');
+    setTimeout(() => {
+      inputEditTagName.focus();
+      inputEditTagName.select();
+    }, 50);
+  }
+
+  function closeTagEditModal() {
+    if (tagEditModal) tagEditModal.classList.add('hidden');
+    editingTagOriginal = null;
+  }
+
+  function applyTagToAll(tagOld, tagNew) {
+    ['activeTasks', 'tomorrowTasks', 'repeatedTasks'].forEach(key => {
+      (appData[key] || []).forEach(item => {
+        if (item.tag === tagOld) item.tag = tagNew;
+      });
+    });
+  }
+
+  function saveTagEdit() {
+    if (!inputEditTagName || editingTagOriginal === null) return;
+    const clean = inputEditTagName.value.trim();
+    if (!clean) {
+      closeTagEditModal();
+      return;
+    }
+    const oldTag = editingTagOriginal;
+    if (clean === oldTag) {
+      closeTagEditModal();
+      return;
+    }
+    if (appData.tagsBank.includes(clean)) {
+      showToast(`Tag "${clean}" already exists`);
+      return;
+    }
+    const idx = appData.tagsBank.indexOf(oldTag);
+    if (idx !== -1) appData.tagsBank[idx] = clean;
+    else appData.tagsBank.push(clean);
+    applyTagToAll(oldTag, clean);
+    currentTagIndex = appData.tagsBank.indexOf(clean);
+    persist({ type: 'TAG_EDITED', payload: { oldTag, newTag: clean } });
+    updateTagCyclistUI();
+    renderActiveTasks();
+    renderRepeatedTasks();
+    closeTagEditModal();
+    showToast(`Tag renamed to "${clean}"`);
+  }
+
+  function deleteTagEdit() {
+    if (editingTagOriginal === null) return;
+    const oldTag = editingTagOriginal;
+    appData.tagsBank = (appData.tagsBank || []).filter(t => t !== oldTag);
+    applyTagToAll(oldTag, '');
+    if (currentTagIndex >= appData.tagsBank.length) currentTagIndex = appData.tagsBank.length - 1;
+    persist({ type: 'TAG_DELETED', payload: { tag: oldTag } });
+    updateTagCyclistUI();
+    renderActiveTasks();
+    renderRepeatedTasks();
+    closeTagEditModal();
+    showToast(`Tag "${oldTag}" deleted`);
   }
 
   // ----------------- NETWORK & PAIRING CODE -----------------
@@ -1177,14 +1284,15 @@
       stylePriorityButton(btnQuickPriority, quickPriorityDot, quickPriorityText, currentPriority);
     });
 
-    // Tag Cycler through Tag Bank
+    // Tag button: open the tag editor (or create a tag when none exist)
     btnQuickTag.addEventListener('click', () => {
-      if (!appData.tagsBank || appData.tagsBank.length === 0) {
+      const tags = appData.tagsBank || [];
+      if (tags.length === 0) {
         openNewTagPopover();
         return;
       }
-      currentTagIndex = (currentTagIndex + 1) % appData.tagsBank.length;
-      updateTagCyclistUI();
+      const tag = tags[currentTagIndex] || tags[0];
+      openTagEditModal(tag);
     });
 
     // + New Tag Popover Controls
@@ -1208,7 +1316,7 @@
         if (!appData.tagsBank.includes(clean)) {
           appData.tagsBank.push(clean);
           currentTagIndex = appData.tagsBank.length - 1;
-          persist();
+          persist({ type: 'TAG_ADDED', payload: clean });
           updateTagCyclistUI();
           showToast(`Tag "${clean}" added to bank`);
         } else {
@@ -1216,6 +1324,7 @@
           updateTagCyclistUI();
         }
       }
+      refreshNewTagButton();
       closeNewTagPopover();
     }
 
@@ -1246,6 +1355,35 @@
       } else if (e.key === 'Escape') {
         closeNewTagPopover();
       }
+    });
+
+    // Standalone Edit Tag Modal listeners
+    btnSaveEditTag?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      saveTagEdit();
+    });
+    btnCancelEditTag?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeTagEditModal();
+    });
+    btnCloseEditTag?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeTagEditModal();
+    });
+    btnDeleteEditTag?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteTagEdit();
+    });
+    inputEditTagName?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        saveTagEdit();
+      } else if (e.key === 'Escape') {
+        closeTagEditModal();
+      }
+    });
+    tagEditModal?.addEventListener('click', (e) => {
+      if (e.target === tagEditModal) closeTagEditModal();
     });
 
     // Repeated Habit Inline Form Controls (shared by create + edit)
@@ -1317,6 +1455,15 @@
         persist();
         renderCompletedHistory();
         showToast('History cleared');
+      }
+    });
+
+    // Tag inline edit on click
+    document.addEventListener('click', (e) => {
+      const clickTarget = e.target.closest('.tag-edit-item');
+      if (clickTarget) {
+        const tagValue = clickTarget.getAttribute('data-tag-value');
+        openTagEditModal(tagValue);
       }
     });
 
