@@ -21,7 +21,7 @@ class LocalStore {
       appName: 'Task Thing',
       tagline: "Get your *things* together",
       lastActiveDate: today,
-      tagsBank: ['Design', 'Dev', 'Ops', 'Team', 'Personal'],
+      tagsBank: [],
       settings: {
         themePreset: 'cobalt',
         colorMode: 'dark',
@@ -41,8 +41,10 @@ class LocalStore {
     if (!this.data) return;
 
     if (!this.data.tagsBank) {
-      this.data.tagsBank = ['Design', 'Dev', 'Ops', 'Team', 'Personal'];
+      this.data.tagsBank = [];
     }
+    const stockTags = ['Design', 'Dev', 'Ops', 'Team', 'Personal'];
+    this.data.tagsBank = this.data.tagsBank.filter(t => !stockTags.includes(t));
     if (!this.data.repeatedTasks) {
       this.data.repeatedTasks = [];
     }
@@ -106,7 +108,10 @@ class LocalStore {
       if (fs.existsSync(this.filePath)) {
         const raw = fs.readFileSync(this.filePath, 'utf8');
         const parsed = JSON.parse(raw);
-        return Object.assign(this.getDefaultData(), parsed);
+        const data = Object.assign(this.getDefaultData(), parsed);
+        const stockTags = ['Design', 'Dev', 'Ops', 'Team', 'Personal'];
+        data.tagsBank = (data.tagsBank || []).filter(t => !stockTags.includes(t));
+        return data;
       }
     } catch (err) {
       console.error('Error loading data from local store:', err);

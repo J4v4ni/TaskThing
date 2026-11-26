@@ -5,7 +5,7 @@
       themePreset: 'cobalt',
       connected: false
     },
-    tagsBank: ['Design', 'Dev', 'Ops', 'Team', 'Personal'],
+    tagsBank: [],
     repeatedTasks: [],
     tomorrowTasks: [],
     activeTasks: [],
@@ -77,6 +77,8 @@
   const optToday = document.getElementById('mobile-opt-today');
   const optTomorrow = document.getElementById('mobile-opt-tomorrow');
   const quickInput = document.getElementById('mobile-quick-input');
+  const quickTimeInput = document.getElementById('mobile-quick-time');
+  const quickDateInput = document.getElementById('mobile-quick-date');
   const btnSubmit = document.getElementById('mobile-btn-submit');
   const btnPriority = document.getElementById('mobile-btn-priority');
   const priorityDot = document.getElementById('mobile-priority-dot');
@@ -101,6 +103,7 @@
   const editPriorityDot = document.getElementById('mobile-edit-priority-dot');
   const editPriorityLabel = document.getElementById('mobile-edit-priority-label');
   const editTimeInput = document.getElementById('mobile-edit-time');
+  const editDateInput = document.getElementById('mobile-edit-date');
   const editTagBtn = document.getElementById('mobile-edit-tag');
   const editTagLabel = document.getElementById('mobile-edit-tag-label');
   const btnSaveTaskEdit = document.getElementById('mobile-btn-save-task-edit');
@@ -168,7 +171,12 @@
         mobileData.completedTasks = [];
       }
 
-      if (!mobileData.tagsBank) mobileData.tagsBank = ['Design', 'Dev', 'Ops', 'Team', 'Personal'];
+      if (!mobileData.tagsBank) {
+        mobileData.tagsBank = [];
+      } else {
+        const stockTags = ['Design', 'Dev', 'Ops', 'Team', 'Personal'];
+        mobileData.tagsBank = mobileData.tagsBank.filter(t => !stockTags.includes(t));
+      }
       if (!mobileData.repeatedTasks) mobileData.repeatedTasks = [];
       if (!mobileData.tomorrowTasks) mobileData.tomorrowTasks = [];
       if (!mobileData.activeTasks) mobileData.activeTasks = [];
@@ -815,6 +823,27 @@
   }
 
   // ----------------- ACTIVE TASKS & EMPTY STATES -----------------
+  function isTaskPassedDue(task) {
+    if (!task) return false;
+    if (task.isRollover) return true;
+    const today = getTodayString();
+    if (task.date && task.date < today) return true;
+    if (!task.date || task.date === today) {
+      if (task.time && typeof task.time === 'string' && task.time.includes(':')) {
+        const now = new Date();
+        const curH = now.getHours();
+        const curM = now.getMinutes();
+        const [dueH, dueM] = task.time.split(':').map(n => parseInt(n, 10));
+        if (!isNaN(dueH) && !isNaN(dueM)) {
+          if (curH > dueH || (curH === dueH && curM >= dueM)) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
   function renderActiveTasks() {
     activeTasksList.innerHTML = '';
     const tasks = mobileData.activeTasks || [];
@@ -852,9 +881,10 @@
     tasks.forEach(task => {
       const item = document.createElement('div');
       
+      const isPastDue = isTaskPassedDue(task);
       let borderStyle = '';
-      if (task.isRollover) {
-        borderStyle = 'border border-error/40 bg-error-container/40 ring-1 ring-error/20';
+      if (isPastDue) {
+        borderStyle = 'border border-error/50 bg-error-container/40 ring-1 ring-error/30';
       } else {
         borderStyle = 'bg-surface-container active:bg-surface-container-high border border-outline-variant';
       }
@@ -873,7 +903,7 @@
           <div class="flex flex-col min-w-0 task-title-box cursor-pointer">
             <div class="flex items-center gap-1.5 min-w-0">
               <span class="font-body-md text-on-surface truncate font-medium">${escapeHtml(task.title)}</span>
-              ${task.isRollover ? `
+              ${isPastDue ? `
                 <span class="h-3.5 px-1 rounded bg-error text-on-error font-label-mono text-[8px] font-bold uppercase shrink-0">Overdue</span>
               ` : ''}
             </div>
@@ -882,7 +912,7 @@
                 ${task.priority ? task.priority.toUpperCase() : 'NORMAL'}
               </span>
               ${task.time ? `
-                <span class="font-label-mono text-[10px] text-on-surface-variant flex items-center gap-0.5">
+                <span class="font-label-mono text-[10px] ${isPastDue ? 'text-error font-bold' : 'text-on-surface-variant'} flex items-center gap-0.5">
                   <span class="material-symbols-outlined text-[11px]">schedule</span>
                   ${escapeHtml(task.time)}
                 </span>
@@ -1180,8 +1210,13 @@
   }
 
   function updateTagUI() {
-    const tags = mobileData.tagsBank;
-    if (currentTagIndex >= tags.length) currentTagIndex = 0;
+    const tags = mobileData.tagsBank || [];
+    if (tags.length === 0) {
+      currentTagIndex = -1;
+      tagLabel.textContent = 'No Tag';
+      return;
+    }
+    if (currentTagIndex < 0 || currentTagIndex >= tags.length) currentTagIndex = 0;
     tagLabel.textContent = tags[currentTagIndex];
   }
 
@@ -1304,7 +1339,8 @@
     taskModalTitle.textContent = 'Edit Task';
     editTaskTitle.value = task.title || '';
     editTimeInput.value = task.time || '17:00';
-    editTagLabel.textContent = task.tag || 'General';
+    if (editDateInput) editDateInput.value = task.date || getTodayString();
+    editTagLabel.textContent = task.tag || (editTagIndex >= 0 ? mobileData.tagsBank[editTagIndex] : 'No Tag');
     stylePriorityButton(editPriorityBtn, editPriorityDot, editPriorityLabel, editPriority);
     taskModal.classList.remove('hidden');
     setTimeout(() => editTaskTitle.focus(), 80);
@@ -1324,9 +1360,10 @@
     task.title = title;
     task.priority = editPriority;
     task.time = editTimeInput.value || '';
+    if (editDateInput && editDateInput.value) task.date = editDateInput.value;
     task.tag = editTagIndex >= 0
-      ? (mobileData.tagsBank[editTagIndex] || task.tag || 'General')
-      : (task.tag || 'General');
+      ? (mobileData.tagsBank[editTagIndex] || '')
+      : (task.tag || '');
     persistData();
     sendOrQueueMutation({ type: 'TASK_EDITED', payload: task });
     closeTaskModal();
@@ -1468,12 +1505,32 @@
     function openQuickAdd(target = 'today') {
       schedulingTarget = target;
       schedBadge.textContent = target === 'tomorrow' ? 'Tomorrow' : 'Today';
+      if (quickDateInput) {
+        quickDateInput.value = target === 'tomorrow' ? getTomorrowString() : getTodayString();
+      }
+      if (quickTimeInput && !quickTimeInput.value) {
+        quickTimeInput.value = '17:00';
+      }
       quickAddBox.classList.remove('hidden');
       addText.textContent = 'Close';
       addIcon.textContent = 'close';
       quickInput.focus();
       addMenu.classList.add('hidden');
     }
+
+    quickDateInput?.addEventListener('change', () => {
+      const val = quickDateInput.value;
+      if (val === getTomorrowString()) {
+        schedulingTarget = 'tomorrow';
+        schedBadge.textContent = 'Tomorrow';
+      } else if (val === getTodayString()) {
+        schedulingTarget = 'today';
+        schedBadge.textContent = 'Today';
+      } else {
+        schedulingTarget = 'custom';
+        schedBadge.textContent = val ? val.slice(5) : 'Date';
+      }
+    });
 
     function closeQuickAdd() {
       quickAddBox.classList.add('hidden');
@@ -1505,22 +1562,26 @@
       const title = quickInput.value.trim();
       if (!title) return;
 
+      const chosenTime = quickTimeInput?.value || '17:00';
+      const chosenDate = quickDateInput?.value || (schedulingTarget === 'tomorrow' ? getTomorrowString() : getTodayString());
+
       const newTask = {
         id: 'm-' + Date.now(),
         title,
         priority: currentPriority,
-        tag: mobileData.tagsBank[currentTagIndex],
-        time: '17:00',
-        date: schedulingTarget === 'tomorrow' ? getTomorrowString() : getTodayString(),
+        tag: (mobileData.tagsBank && currentTagIndex >= 0) ? (mobileData.tagsBank[currentTagIndex] || '') : '',
+        time: chosenTime,
+        date: chosenDate,
         isRollover: false,
         createdAt: new Date().toISOString()
       };
 
-      if (schedulingTarget === 'tomorrow') {
+      const todayStr = getTodayString();
+      if (chosenDate > todayStr) {
         mobileData.tomorrowTasks.push(newTask);
         persistData();
         updateTomorrowBanner();
-        alert('Queued for Tomorrow!');
+        alert('Queued for ' + (chosenDate === getTomorrowString() ? 'Tomorrow' : chosenDate) + '!');
       } else {
         mobileData.activeTasks.push(newTask);
         persistData();
@@ -1544,6 +1605,10 @@
 
     // Tag button & New Tag
     btnTag.addEventListener('click', () => {
+      if (!mobileData.tagsBank || mobileData.tagsBank.length === 0) {
+        openTagModal('task');
+        return;
+      }
       currentTagIndex = (currentTagIndex + 1) % mobileData.tagsBank.length;
       updateTagUI();
     });
@@ -1608,7 +1673,10 @@
     });
 
     editTagBtn?.addEventListener('click', () => {
-      if (!mobileData.tagsBank.length) return;
+      if (!mobileData.tagsBank.length) {
+        openTagModal('task');
+        return;
+      }
       editTagIndex = (editTagIndex + 1) % mobileData.tagsBank.length;
       editTagLabel.textContent = mobileData.tagsBank[editTagIndex];
     });
@@ -1635,7 +1703,10 @@
     });
 
     habitTagBtn?.addEventListener('click', () => {
-      if (!mobileData.tagsBank.length) return;
+      if (!mobileData.tagsBank.length) {
+        openTagModal('habit');
+        return;
+      }
       habitTagIndex = (habitTagIndex + 1) % mobileData.tagsBank.length;
       habitTagLabel.textContent = mobileData.tagsBank[habitTagIndex];
     });
@@ -1812,6 +1883,11 @@
     document.addEventListener('click', () => {
       addMenu.classList.add('hidden');
     });
+
+    // Auto-refresh active tasks every 30s to update overdue/past-due highlights as time passes
+    setInterval(() => {
+      renderActiveTasks();
+    }, 30000);
   }
 
   function setReportStatus(message) {

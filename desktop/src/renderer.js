@@ -6,7 +6,7 @@
       colorMode: 'light',
       alwaysOnTop: false
     },
-    tagsBank: ['Design', 'Dev', 'Ops', 'Team', 'Personal'],
+    tagsBank: [],
     repeatedTasks: [],
     tomorrowTasks: [],
     activeTasks: [],
@@ -53,6 +53,7 @@
   const quickPriorityDot = document.getElementById('quick-priority-dot');
   const quickPriorityText = document.getElementById('quick-priority-text');
   const quickTimeInput = document.getElementById('quick-time-input');
+  const quickDateInput = document.getElementById('quick-date-input');
   const btnQuickTag = document.getElementById('btn-quick-tag');
   const quickTagText = document.getElementById('quick-tag-text');
   const btnAddNewTag = document.getElementById('btn-add-new-tag');
@@ -215,9 +216,12 @@
       console.warn('Using local fallback:', err);
     }
 
-    // Safety checks
-    if (!appData.tagsBank || appData.tagsBank.length === 0) {
-      appData.tagsBank = ['Design', 'Dev', 'Ops', 'Team', 'Personal'];
+    // Safety checks & strip any legacy stock tags
+    if (!appData.tagsBank) {
+      appData.tagsBank = [];
+    } else {
+      const stockTags = ['Design', 'Dev', 'Ops', 'Team', 'Personal'];
+      appData.tagsBank = appData.tagsBank.filter(t => !stockTags.includes(t));
     }
     if (!appData.repeatedTasks) appData.repeatedTasks = [];
     if (!appData.tomorrowTasks) appData.tomorrowTasks = [];
@@ -370,6 +374,27 @@
   }
 
   // ----------------- ACTIVE TASKS & EMPTY STATES -----------------
+  function isTaskPassedDue(task) {
+    if (!task) return false;
+    if (task.isRollover) return true;
+    const today = getTodayString();
+    if (task.date && task.date < today) return true;
+    if (!task.date || task.date === today) {
+      if (task.time && typeof task.time === 'string' && task.time.includes(':')) {
+        const now = new Date();
+        const curH = now.getHours();
+        const curM = now.getMinutes();
+        const [dueH, dueM] = task.time.split(':').map(n => parseInt(n, 10));
+        if (!isNaN(dueH) && !isNaN(dueM)) {
+          if (curH > dueH || (curH === dueH && curM >= dueM)) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
   function renderActiveTasks() {
     activeTasksList.innerHTML = '';
     const tasks = appData.activeTasks || [];
@@ -409,10 +434,11 @@
     tasks.forEach((task) => {
       const card = document.createElement('div');
       
-      // Highlight in red if task is an overdue rollover from a previous day!
+      // Highlight in red if task has passed due time or is an overdue rollover
+      const isPastDue = isTaskPassedDue(task);
       let rolloverClasses = '';
-      if (task.isRollover) {
-        rolloverClasses = 'border border-error/40 bg-error-container/40 ring-1 ring-error/20';
+      if (isPastDue) {
+        rolloverClasses = 'border border-error/50 bg-error-container/40 ring-1 ring-error/30';
       } else {
         rolloverClasses = 'bg-surface-container hover:bg-surface-container-high border border-outline-variant';
       }
@@ -429,14 +455,14 @@
           <div class="flex flex-col min-w-0 cursor-pointer task-title-box">
             <div class="flex items-center gap-1.5 min-w-0">
               <span class="font-body-sm text-body-sm text-on-surface truncate">${escapeHtml(task.title)}</span>
-              ${task.isRollover ? `
+              ${isPastDue ? `
                 <span class="h-3.5 px-1 rounded bg-error text-on-error font-label-mono text-[8px] font-bold tracking-wider uppercase shrink-0">Overdue</span>
               ` : ''}
             </div>
             <div class="flex items-center gap-space-xs mt-0.5">
               ${priorityBadge}
               ${task.time ? `
-                <span class="font-label-mono text-label-mono text-on-surface-variant flex items-center gap-0.5">
+                <span class="font-label-mono text-label-mono ${isPastDue ? 'text-error font-semibold' : 'text-on-surface-variant'} flex items-center gap-0.5">
                   <span class="material-symbols-outlined text-[10px]">schedule</span>
                   ${escapeHtml(task.time)}
                 </span>
@@ -975,8 +1001,13 @@
   }
 
   function updateTagCyclistUI() {
-    const tags = appData.tagsBank;
-    if (currentTagIndex >= tags.length) currentTagIndex = 0;
+    const tags = appData.tagsBank || [];
+    if (tags.length === 0) {
+      currentTagIndex = -1;
+      quickTagText.textContent = 'No Tag';
+      return;
+    }
+    if (currentTagIndex < 0 || currentTagIndex >= tags.length) currentTagIndex = 0;
     quickTagText.textContent = tags[currentTagIndex];
   }
 
@@ -1067,6 +1098,9 @@
     function openQuickAdd(target = 'today') {
       schedulingTarget = target;
       schedulingTargetBadge.textContent = target === 'tomorrow' ? 'Tomorrow' : 'Today';
+      if (quickDateInput) {
+        quickDateInput.value = target === 'tomorrow' ? getTomorrowString() : getTodayString();
+      }
       quickAddSection.classList.remove('hidden');
       addBtnText.textContent = 'Close';
       addBtnIcon.textContent = 'close';
@@ -1107,22 +1141,23 @@
       const text = quickInput.value.trim();
       if (!text) return;
 
+      const chosenDate = quickDateInput?.value || (schedulingTarget === 'tomorrow' ? getTomorrowString() : getTodayString());
       const newTask = {
         id: 'task-' + Date.now(),
         title: text,
         priority: currentPriority,
         time: quickTimeInput.value || '17:00',
-        tag: appData.tagsBank[currentTagIndex],
-        date: schedulingTarget === 'tomorrow' ? getTomorrowString() : getTodayString(),
+        tag: (appData.tagsBank && currentTagIndex >= 0) ? (appData.tagsBank[currentTagIndex] || '') : '',
+        date: chosenDate,
         isRollover: false,
         createdAt: new Date().toISOString()
       };
 
-      if (schedulingTarget === 'tomorrow') {
+      if (chosenDate > getTodayString()) {
         appData.tomorrowTasks.push(newTask);
         persist();
         updateTomorrowBanner();
-        showToast('Queued for Tomorrow!');
+        showToast('Queued for ' + (chosenDate === getTomorrowString() ? 'Tomorrow' : chosenDate) + '!');
       } else {
         appData.activeTasks.push(newTask);
         persist({ type: 'TASK_ADDED', payload: newTask });
@@ -1144,6 +1179,10 @@
 
     // Tag Cycler through Tag Bank
     btnQuickTag.addEventListener('click', () => {
+      if (!appData.tagsBank || appData.tagsBank.length === 0) {
+        openNewTagPopover();
+        return;
+      }
       currentTagIndex = (currentTagIndex + 1) % appData.tagsBank.length;
       updateTagCyclistUI();
     });
@@ -1334,6 +1373,11 @@
         newTagPopover.classList.add('hidden');
       }
     });
+
+    // Auto-refresh active tasks every 30s to update overdue/past-due highlights as time passes
+    setInterval(() => {
+      renderActiveTasks();
+    }, 30000);
 
   }
 
